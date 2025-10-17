@@ -1,10 +1,6 @@
-//const OpenAI = require("openai");
-//process.env.OPENAI_API_KEY
-//const openai = new OpenAI({ apiKey: "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" });
 
 import { CohereClient } from "cohere-ai";
 
-//
 export async function analyzeDeals(stocks: any[]) {
   /* const prompt = `
 You are a financial market analyst. From the following stock data, identify the best 5 day trading opportunities:
