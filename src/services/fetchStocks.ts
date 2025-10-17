@@ -1,16 +1,37 @@
 //const yahooFinance = require("yahoo-finance2");
 import yahooFinance from "yahoo-finance2";
+import type { Quote } from "yahoo-finance2/dist/esm/src/modules/quote";
 
-const symbols = [
+const symbols2 = [
   "AAPL", "TSLA", "NVDA", "AMZN", "META",
   "NFLX", "MSFT", "AMD", "GOOG", "INTC"
 ];
 
-export async function fetchStockData() {
-  const results = [];
+type StockData = {
+  symbol: string;
+  price: number;
+  change_pct: string;
+  volume: string | undefined;
+  marketState: string;
+};
+
+export async function fetchStockData(symbols: any[]): Promise<StockData[]> {
+
+
+console.log('gotsymbols===',symbols);
+
+  const results: StockData[] = [];
   for (const symbol of symbols) {
     try {
-      const quote = await yahooFinance.quote(symbol);
+   
+      const quote = await yahooFinance.quote(symbol) as any;
+
+      //console.log('quote typeof', typeof quote);
+    //  console.log('quote', quote.regularMarketPrice);
+      
+
+      //results.push(quote);
+      
       results.push({
         symbol,
         price: quote.regularMarketPrice,
@@ -18,10 +39,12 @@ export async function fetchStockData() {
         volume: quote.regularMarketVolume?.toLocaleString(),
         marketState: quote.marketState,
       });
+      
     } catch (err) {
       console.error("Error fetching", symbol, err);
     }
   }
+
   return results;
 }
 

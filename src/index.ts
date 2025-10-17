@@ -10,7 +10,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const finnhub = require("finnhub");
 //import FinnhubAPI, { FinnhubWS } from '@stoqey/finnhub';
-
+import yahooFinance from "yahoo-finance2";
 const https = require("https");
 import { fetch, Agent } from "undici";
 //import yahooFinance from "yahoo-finance2";
@@ -36,10 +36,16 @@ dns.setDefaultResultOrder("ipv4first");
 
 console.log('hhhhh');
 
-app.post("/api/daytrading-deals", async (_req: any, res: any) => {
+app.post("/api/daytrading-deals", async (req: any, res: any) => {
   try {
     // fetch real-time data
-    const stocks = await fetchStockData();
+    console.log('request body typeof =====',typeof req.body);
+    const {symbols}  = req.body;
+console.log('symblsfromclient==',symbols);
+    const syms = symbols.split(",").map((s: any) => s.trim());
+
+console.log('symblsfromclientconverttoarray==',syms);
+    const stocks = await fetchStockData(syms);
     // analyze with GPT
     console.log('STOCKSRETURNED=============',stocks);
     //
@@ -149,7 +155,7 @@ app.get("/api/stocks/:symbol", async (req:any, res:any) => {
 
 
 // Fetch stock data (you can switch between Finnhub / Yahoo)
-/*
+
 app.get("/api/yfstocks/:symbol", async (req: any, res: any) => {
 
 console.log('stocks endpoint called w params',req.params);
@@ -170,7 +176,7 @@ console.log('stocks endpoint called w params',req.params);
 
 
 
-
+/*
 
 
 app.get("/api/stocks/:symbol", async (req: any, res: any) => {
