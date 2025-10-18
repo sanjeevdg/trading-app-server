@@ -2,21 +2,21 @@
 //import cors from "cors";
 //import dotenv from 'dotenv';
 const express = require("express");
-import { CohereClient } from "cohere-ai";
-import dns from "dns";
+const { CohereClient } = require("cohere-ai");
+const dns = require("dns");
 //const { Request, Response } = require("express");
 const axios  = require("axios");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const finnhub = require("finnhub");
 //import FinnhubAPI, { FinnhubWS } from '@stoqey/finnhub';
-import yahooFinance from "yahoo-finance2";
+const yahooFinance = require("yahoo-finance2").default;
 const https = require("https");
-import { fetch, Agent } from "undici";
+const { fetch, Agent } = require("undici");
 //import yahooFinance from "yahoo-finance2";
 
-import { fetchStockData } from "./services/fetchStocks";
-import { analyzeDeals } from "./services/analyzeDeals";
+const { fetchStockData } = require("./services/fetchStocks");
+const { analyzeDeals } = require("./services/analyzeDeals");
 
 dotenv.config();
 const app = express();
@@ -36,13 +36,13 @@ dns.setDefaultResultOrder("ipv4first");
 
 console.log('hhhhh');
 
-app.post("/api/daytrading-deals", async (req: any, res: any) => {
+app.post("/api/daytrading-deals", async (req, res) => {
   try {
     // fetch real-time data
     console.log('request body typeof =====',typeof req.body);
     const {symbols}  = req.body;
 console.log('symblsfromclient==',symbols);
-    const syms = symbols.split(",").map((s: any) => s.trim());
+    const syms = symbols.split(",").map((s) => s.trim());
 
 console.log('symblsfromclientconverttoarray==',syms);
     const stocks = await fetchStockData(syms);
@@ -78,15 +78,15 @@ const co = new CohereClient({token:"2f7GPvRUHd3oxfBByZRA0oLpoXlFU5rIYYYVA1xM"} )
 
 
 
-app.get("/api/test", async (req:any, res:any) => {
+app.get("/api/test", async (req, res) => {
 
 https.get("https://finnhub.io/api/v1/quote?symbol=AAPL&token=d3nr05hr01qtm4jdum8gd3nr05hr01qtm4jdum90", {
   agent: new https.Agent({ family: 4 }),
-}, (res:any) => {
+}, (res) => {
   let data = "";
-  res.on("data", (chunk:any) => (data += chunk));
+  res.on("data", (chunk) => (data += chunk));
   res.on("end", () => console.log("✅ Data:", data));
-}).on("error", (err:any) => {
+}).on("error", (err) => {
   console.error("❌ Error:", err);
 });
 
@@ -95,15 +95,15 @@ https.get("https://finnhub.io/api/v1/quote?symbol=AAPL&token=d3nr05hr01qtm4jdum8
 
 
 // Helper to fetch JSON via https.get (IPv4 forced)
-function fetchJson(url: string): Promise<any> {
+function fetchJson(url) {
   return new Promise((resolve, reject) => {
     const req = https.get(
       url,
       { family: 4 }, // ✅ Force IPv4 to avoid ETIMEDOUT on IPv6
-      (res:any) => {
+      (res) => {
         let data = "";
 
-        res.on("data", (chunk:any) => (data += chunk));
+        res.on("data", (chunk) => (data += chunk));
         res.on("end", () => {
           try {
             resolve(JSON.parse(data));
@@ -114,12 +114,12 @@ function fetchJson(url: string): Promise<any> {
       }
     );
 
-    req.on("error", (err:any) => reject(err));
+    req.on("error", (err) => reject(err));
     req.end();
   });
 }
 
-app.get("/api/stocks/:symbol", async (req:any, res:any) => {
+app.get("/api/stocks/:symbol", async (req, res) => {
   const { symbol } = req.params;
 
   try {
@@ -152,11 +152,67 @@ app.get("/api/stocks/:symbol", async (req:any, res:any) => {
 
 
 
+// Fetch summary + dividend history
+app.post("/api/sdhstocks", async (req, res) => {
 
+console.log('entereds sdh stockse',req.body);
+console.log('entereds sdh stockse222222',typeof req.body);
+
+
+  const { symbols } = req.body;
+  if (!symbols || !Array.isArray(symbols)) {
+    return res.status(400).json({ error: "Symbols must be an array" });
+  }
+
+
+console.log('symbols',symbols);
+console.log('symbols222222',typeof symbols);
+
+
+  try {
+    const results = [];
+
+    for (const symbol of symbols) {
+      const quote = await yahooFinance.quote(symbol);
+     
+      // Fetch chart data (replaces historical)
+        const chart = await yahooFinance.chart(symbol, {
+          period1: "2025-01-01", // monthly data points
+          period2: "2025-10-10", // monthly data points
+          interval: "1wk",     // last 5 years
+        });
+
+        // Format chart data for line charts
+        const dividendYields = chart.quotes
+          .filter((q) => q.dividendsPerShare !== undefined)
+          .map((q) => ({
+            date: q.date,
+            yield: q.dividendsPerShare,
+          }));
+
+        results.push({
+          symbol,
+          price: quote.regularMarketPrice || null,
+          peRatio: quote.trailingPE || null,
+          eps: quote.epsTrailingTwelveMonths || null,
+          dividendYield: quote.trailingAnnualDividendYield
+            ? (quote.trailingAnnualDividendYield * 100).toFixed(2)
+            : 0,
+          marketCap: quote.marketCap || null,
+          dividendYields,
+        });
+    }
+
+    res.json(results);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch stock data" });
+  }
+});
 
 // Fetch stock data (you can switch between Finnhub / Yahoo)
 
-app.get("/api/yfstocks/:symbol", async (req: any, res: any) => {
+app.get("/api/yfstocks/:symbol", async (req, res) => {
 
 console.log('stocks endpoint called w params',req.params);
 
@@ -252,7 +308,7 @@ app.get("/api/xstocks/:symbol", async (req: any, res: any) => {
   }
 });
 */
-app.get("/api/xstocks/:symbol", async (req: any, res: any) => {
+app.get("/api/xstocks/:symbol", async (req, res) => {
   const { symbol } = req.params;
 
   try {
@@ -285,7 +341,7 @@ console.log('profileUrl============',profileUrl);
     };
 
     res.json(data);
-  } catch (error: any) {
+  } catch (error) {
     console.error("Finnhub Error:", error?.code || error?.message || error);
     res.status(500).json({ error: "Failed to fetch stock data" });
   }
@@ -293,7 +349,7 @@ console.log('profileUrl============',profileUrl);
 
 
 // Analyze multiple stocks with Cohere AI
-app.post("/api/analyze", async (req: any, res: any) => {
+app.post("/api/analyze", async (req, res) => {
   const { stocks } = req.body; // array of {symbol, price, change, marketCap, etc}
   try {
     const prompt = `

@@ -1,7 +1,11 @@
 
-import { CohereClient } from "cohere-ai";
+const { CohereClient } = require("cohere-ai") ;
+//: any[]
 
-export async function analyzeDeals(stocks: any[]) {
+
+
+
+async function analyzeDeals(stocks) {
   /* const prompt = `
 You are a financial market analyst. From the following stock data, identify the best 5 day trading opportunities:
 
@@ -87,3 +91,5 @@ return { deals: parsed,summary: summary };
 
 //analyzeDeals();
 
+
+module.exports = { analyzeDeals };
