@@ -150,8 +150,77 @@ app.get("/api/stocks/:symbol", async (req, res) => {
   }
 });
 
+app.post("/api/cdsstocks", async (req, res) => {
+  const { symbols } = req.body;
 
+  if (!symbols || !Array.isArray(symbols)) {
+    return res.status(400).json({ error: "symbols must be an array" });
+  }
 
+  try {
+    const results = [];
+
+    for (const symbol of symbols) {
+      console.log(`Fetching data for ${symbol}...`);
+
+      // --- 1️⃣ Latest market info ---
+      const quote = await yahooFinance.quote(symbol);
+
+      // --- 2️⃣ Chart data for candles ---
+      const period2 = new Date();
+      const period1 = new Date();
+      period1.setFullYear(period2.getFullYear() - 5);
+
+      const chart = await yahooFinance.chart(symbol, {
+        period1,
+        period2,
+        interval: "1mo", // monthly candles
+      });
+
+      const quotes = chart?.quotes || [];
+
+      // --- 3️⃣ Prepare candle data ---
+      const candles = quotes.map((q) => ({
+        time: q.date.toISOString().split("T")[0],
+        open: q.open,
+        high: q.high,
+        low: q.low,
+        close: q.close,
+      }));
+
+      // --- 4️⃣ Compute historical dividend yield (real) ---
+      const annualDividend =
+        quote.trailingAnnualDividendRate || quote.dividendRate || 0;
+
+      const dividendYields = quotes.map((q) => ({
+        date: q.date.toISOString().split("T")[0],
+        yield:
+          q.close && annualDividend
+            ? ((annualDividend / q.close) * 100).toFixed(2)
+            : 0,
+      }));
+
+      // --- 5️⃣ Consolidate all results ---
+      results.push({
+        symbol,
+        price: quote.regularMarketPrice || null,
+        peRatio: quote.trailingPE || null,
+        eps: quote.epsTrailingTwelveMonths || null,
+        dividendYield: quote.trailingAnnualDividendYield
+          ? (quote.trailingAnnualDividendYield * 100).toFixed(2)
+          : 0,
+        marketCap: quote.marketCap || null,
+        candles,
+        dividendYields,
+      });
+    }
+
+    res.json(results);
+  } catch (err) {
+    console.error("Yahoo Finance API error:", err);
+    res.status(500).json({ error: "Error fetching stock data" });
+  }
+});
 // Fetch summary + dividend history
 app.post("/api/sdhstocks", async (req, res) => {
 
