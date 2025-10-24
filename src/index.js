@@ -20,6 +20,8 @@ const { analyzeDeals } = require("./services/analyzeDeals");
 
 const { screenSymbols } = require("./screener");
 
+const { detectPatterns } = require("./patternUtils");
+const { fetchCandles } = require("./fetchData");
 
 dotenv.config();
 const app = express();
@@ -95,6 +97,36 @@ https.get("https://finnhub.io/api/v1/quote?symbol=AAPL&token=d3nr05hr01qtm4jdum8
 
 });
 
+
+
+
+app.post("/api/screener", async (req, res) => {
+
+console.log('req-body===',req.body.symbols);
+
+  const symbols = req.body.symbols;
+  // || ["AAPL", "MSFT", "GOOG"];
+  const hits = [];
+
+//: any[]
+// as string
+
+
+
+  for (const symbol of symbols) {
+    try {
+      const candles = await fetchCandles(symbol);
+      const patterns = detectPatterns(candles);
+      if (patterns.length > 0) {
+        hits.push({ symbol, patterns, candles });
+      }
+    } catch (err) {
+      console.error("Error fetching", symbol, err);
+    }
+  }
+
+  res.json(hits);
+});
 
 app.post("/api/screen", async (req, res) => {
   try {
