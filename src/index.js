@@ -18,6 +18,9 @@ const { fetch, Agent } = require("undici");
 const { fetchStockData } = require("./services/fetchStocks");
 const { analyzeDeals } = require("./services/analyzeDeals");
 
+const { screenSymbols } = require("./screener");
+
+
 dotenv.config();
 const app = express();
 app.use(cors());
@@ -92,6 +95,18 @@ https.get("https://finnhub.io/api/v1/quote?symbol=AAPL&token=d3nr05hr01qtm4jdum8
 
 });
 
+
+app.post("/api/screen", async (req, res) => {
+  try {
+    const { symbols, patterns } = req.body;
+    if (!symbols?.length) return res.status(400).json({ error: "No symbols provided" });
+    const results = await screenSymbols(symbols, patterns);
+    res.json(results);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 
 // Helper to fetch JSON via https.get (IPv4 forced)

@@ -1,9 +1,9 @@
 {
   "name": "daytrading-server",
   "version": "1.0.0",
-  "main": "index.ts",
+  "main": "index.js",
   "scripts": {
-    "dev": "ts-node src/index.ts",
+    "dev": "ts-node-dev src/index.js",
     "build": "tsc",
     "start": "node dist/index.js"
   },
@@ -23,8 +23,9 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
-    "@types/node": "^24.7.2",
+    "@types/node": "^24.9.1",
     "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"
   },
   "keywords": [],
