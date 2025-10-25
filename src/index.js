@@ -20,7 +20,7 @@ const { analyzeDeals } = require("./services/analyzeDeals");
 
 const { screenSymbols } = require("./screener");
 
-const { detectPatterns } = require("./patternUtils");
+const { detectPatterns } = require("./patternUtils2");
 const { fetchCandles } = require("./fetchData");
 
 dotenv.config();
@@ -100,30 +100,44 @@ https.get("https://finnhub.io/api/v1/quote?symbol=AAPL&token=d3nr05hr01qtm4jdum8
 
 
 
-app.post("/api/screener", async (req, res) => {
+app.get("/api/screener", async (req, res) => {
 
-console.log('req-body===',req.body.symbols);
+  console.log('req.query',req.query);
+  const symbols = req.query.symbols?.split(",").map(s => s.trim().toUpperCase()) || ["AAPL", "MSFT"];
+  const from = req.query.from ? new Date(req.query.from) : (() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return d; })();
+  const to = req.query.to ? new Date(req.query.to) : new Date();
+  const typeFilter = req.query.type?.toLowerCase() || "all";
+const selectedPatterns = req.query.patterns?.split(",").map(p => p.trim().toLowerCase()) || [];
 
-  const symbols = req.body.symbols;
-  // || ["AAPL", "MSFT", "GOOG"];
   const hits = [];
-
-//: any[]
-// as string
-
-
 
   for (const symbol of symbols) {
     try {
-      const candles = await fetchCandles(symbol);
+      const candles = await fetchCandles(symbol, from, to);
+//console.log(`Fetched ${candles.length} candles for ${symbol} from ${from} to ${to}`);
+
       const patterns = detectPatterns(candles);
-      if (patterns.length > 0) {
-        hits.push({ symbol, patterns, candles });
-      }
+//console.log(`Detected ${patterns?.length || 0} patterns for ${symbol}:`, patterns);
+
+//console.log("Patterns for", symbol, patterns);
+
+      const filtered = patterns.filter(p => {
+  const name = (p?.name || "").toLowerCase();
+  const type = (p?.type || "").toLowerCase();
+  const typeMatch = typeFilter === "all" || type === typeFilter;
+  const patternMatch =
+    selectedPatterns.length === 0 || selectedPatterns.includes(name);
+  return typeMatch && patternMatch;
+});
+console.log(`After filtering (${symbol}): ${filtered.length} matches`);
+
+      if (filtered.length > 0) hits.push({ symbol, patterns: filtered, candles });
     } catch (err) {
       console.error("Error fetching", symbol, err);
     }
   }
+
+//console.log('SENDINGMYHITS>>>>>>>>',hits);
 
   res.json(hits);
 });
