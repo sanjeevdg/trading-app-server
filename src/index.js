@@ -34,8 +34,28 @@ dns.setDefaultResultOrder("ipv4first");
 // Force IPv4 resolution to avoid Node fetch timeouts
 //dns.setDefaultResultOrder("ipv4first");
 
+app.get("/api/most_actives", async (req, res) => {
+  try {
+    // Correct usage — scrIds must be an object property
+    const movers = await yahooFinance.screener({
+      scrIds: "most_actives",
+      count: 100,
+    });
 
+    const results = movers.quotes.map((s) => ({
+      symbol: s.symbol,
+      name: s.shortName,
+      price: s.regularMarketPrice,
+      change: s.regularMarketChangePercent,
+      volume: s.regularMarketVolume,
+    }));
 
+    res.json({ data: results });
+  } catch (err) {
+    console.error("Error fetching most actives:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 //const ipv4Agent = new Agent({ connect: { family: 4 } });
 

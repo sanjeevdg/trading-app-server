@@ -34,6 +34,7 @@ function detectPatterns(candles) {
       c0.close > (c2.open + c2.close) / 2
     ) {
       results.push(`Morning Star on ${c0.date.toISOString().split("T")[0]}`);
+    results.push({ name: "Morning Star", type: "bullish", date });
     }
   }
 
