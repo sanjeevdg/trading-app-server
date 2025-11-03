@@ -33,6 +33,90 @@ dns.setDefaultResultOrder("ipv4first");
 
 // Force IPv4 resolution to avoid Node fetch timeouts
 //dns.setDefaultResultOrder("ipv4first");
+// {"symbol":"NVDA","name":"NVIDIA Corporation","price":202.49,"change":-0.157734,"volume":175662659}
+
+
+app.get("/api/sma", async (req, res) => {
+  const symbols = req.query.symbols;
+  const smaPeriods = [20, 50, 200];
+
+  if (!symbols) {
+    return res.status(400).json({ error: "Please provide comma-separated symbols" });
+  }
+
+  const symbolList = symbols.split(",").map((s) => s.trim().toUpperCase());
+  const results = {};
+
+  // Calculate date 1 year ago for SMA(200)
+  const now = new Date();
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(now.getFullYear() - 1);
+
+  for (const symbol of symbolList) {
+    try {
+      // ✅ Correct usage: period1 must be a Date or timestamp
+      const history = await yahooFinance.historical(symbol, {
+        period1: oneYearAgo,
+        period2: now,
+        interval: "1d",
+      });
+
+      if (!history || history.length < 200) {
+        results[symbol] = { error: "Not enough data for SMA(200)" };
+        continue;
+      }
+
+      const closes = history.map((h) => h.close);
+      const len = closes.length;
+
+      const computeSMA = (period, index) => {
+        if (index + 1 < period) return null;
+        const slice = closes.slice(index + 1 - period, index + 1);
+        return slice.reduce((a, b) => a + b, 0) / period;
+      };
+
+      // Compute SMAs for all data points
+      const smaData = closes.map((_, i) => ({
+        sma20: computeSMA(20, i),
+        sma50: computeSMA(50, i),
+        sma200: computeSMA(200, i),
+      }));
+
+      const last = smaData[len - 1];
+      const prev = smaData[len - 2];
+
+      const entry = {
+        close: Number(closes[len - 1].toFixed(2)),
+        sma_20: last.sma20 ? Number(last.sma20.toFixed(2)) : null,
+        sma_50: last.sma50 ? Number(last.sma50.toFixed(2)) : null,
+        sma_200: last.sma200 ? Number(last.sma200.toFixed(2)) : null,
+      };
+
+      // Detect crossovers
+      const bullish = (aPrev, aCurr, bPrev, bCurr) => aPrev < bPrev && aCurr >= bCurr;
+      const bearish = (aPrev, aCurr, bPrev, bCurr) => aPrev > bPrev && aCurr <= bCurr;
+
+      if (bullish(prev.sma20, last.sma20, prev.sma50, last.sma50))
+        entry.signal_20_50 = "bullish_cross";
+      else if (bearish(prev.sma20, last.sma20, prev.sma50, last.sma50))
+        entry.signal_20_50 = "bearish_cross";
+      else entry.signal_20_50 = "neutral";
+
+      if (bullish(prev.sma50, last.sma50, prev.sma200, last.sma200))
+        entry.signal_50_200 = "bullish_cross";
+      else if (bearish(prev.sma50, last.sma50, prev.sma200, last.sma200))
+        entry.signal_50_200 = "bearish_cross";
+      else entry.signal_50_200 = "neutral";
+
+      results[symbol] = entry;
+    } catch (err) {
+      results[symbol] = { error: err.message };
+    }
+  }
+
+  res.json(results);
+});
+
 
 app.get("/api/most_actives", async (req, res) => {
   try {
