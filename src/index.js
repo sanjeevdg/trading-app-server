@@ -10,7 +10,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const finnhub = require("finnhub");
 //import FinnhubAPI, { FinnhubWS } from '@stoqey/finnhub';
-const yahooFinance = require("yahoo-finance2").default;
+const YahooFinance = require("yahoo-finance2").default;
 const https = require("https");
 const { fetch, Agent } = require("undici");
 //import yahooFinance from "yahoo-finance2";
@@ -31,9 +31,92 @@ app.use(express.json());
 
 dns.setDefaultResultOrder("ipv4first");
 
+const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey','ripHistorical'] });
+/*yahooFinance._opts.validation = { logWarnings: false, validateResults: false };//
+yahooFinance._opts.validation = {
+  logWarnings: false,
+  logErrors: false,
+  validateResults: false,
+  transformErrors: false, // disable Zod-type transformation/decoding checks
+};
+yahooFinance._opts.validation = {
+  logErrors: false,
+  logWarnings: false,
+  validateResults: false,
+  transformErrors: false,
+  transformResult: false, // <- skip Zod transform
+  enableTransform: false, // <- ensures it returns raw Yahoo JSON
+};
+*/
 // Force IPv4 resolution to avoid Node fetch timeouts
 //dns.setDefaultResultOrder("ipv4first");
 // {"symbol":"NVDA","name":"NVIDIA Corporation","price":202.49,"change":-0.157734,"volume":175662659}
+
+
+
+
+
+app.get("/api/trending", async (req, res) => {
+  try {
+    const region = (req.query.region || "US").toUpperCase();
+
+
+
+    const result = await yahooFinance.screener({
+  scrIds: "day_gainers",
+  count: 100
+});
+
+
+    const quotes = result?.quotes || [];
+
+    const formatted = quotes.map(q => ({
+      symbol: q.symbol,
+      name: q.shortName || q.longName || "-",
+      price: q.regularMarketPrice,
+      changePercent: q.regularMarketChangePercent?.toFixed(2),
+      volume: q.regularMarketVolume
+    }));
+
+    res.json(formatted);
+  } catch (error) {
+    console.error("Error fetching trending symbols:", error);
+    res.status(500).json({ error: "Failed to fetch trending symbols", details: error.message });
+  }
+});
+
+
+app.get("/api/small_cap_gainers", async (req, res) => {
+  try {
+   const result = await yahooFinance.screener({
+  scrIds: "small_cap_gainers",
+  count: 5
+});
+    const quotes = result.quotes || [];
+
+    const formatted = quotes
+      .filter(
+        (q) =>
+          q.marketCap > 3e8 &&
+          q.marketCap < 2e9 &&
+          q.regularMarketVolume > 100000
+      )
+      .map((q) => ({
+        symbol: q.symbol,
+        name: q.shortName || q.longName || "-",
+        price: q.regularMarketPrice,
+        changePercent: q.regularMarketChangePercent?.toFixed(2),
+        volume: q.regularMarketVolume,
+      }));
+
+    res.json(formatted);
+  } catch (err) {
+    console.error("Error fetching small cap gainers:", err);
+    res
+      .status(500)
+      .json({ error: "Failed to fetch small cap gainers", details: err.message });
+  }
+});
 
 
 app.get("/api/sma", async (req, res) => {
@@ -120,27 +203,31 @@ app.get("/api/sma", async (req, res) => {
 
 app.get("/api/most_actives", async (req, res) => {
   try {
-    // Correct usage — scrIds must be an object property
     const movers = await yahooFinance.screener({
       scrIds: "most_actives",
       count: 100,
     });
 
-    const results = movers.quotes.map((s) => ({
-      symbol: s.symbol,
-      name: s.shortName,
-      price: s.regularMarketPrice,
-      change: s.regularMarketChangePercent,
-      volume: s.regularMarketVolume,
-    }));
+    // Safely map and filter data
+    const results = (movers.quotes || [])
+      .filter((s) => s && s.symbol && s.regularMarketPrice != null)
+      .map((s) => ({
+        symbol: s.symbol,
+        name: s.shortName || s.longName || "N/A",
+        price: s.regularMarketPrice,
+        change: s.regularMarketChangePercent,
+        volume: s.regularMarketVolume,
+      }));
 
     res.json({ data: results });
   } catch (err) {
     console.error("Error fetching most actives:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({
+      error: err.message,
+      details: err.errors || null, // helpful if you want to log details
+    });
   }
 });
-
 //const ipv4Agent = new Agent({ connect: { family: 4 } });
 
 console.log('hhhhh');

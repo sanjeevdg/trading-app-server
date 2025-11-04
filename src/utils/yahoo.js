@@ -2,7 +2,7 @@
 const yahooFinance = require("yahoo-finance2").default;
 
 
-yahooFinance.suppressNotices(["ripHistorical"]);
+//yahooFinance.suppressNotices(["ripHistorical"]);
 
 async function getHistoricalData(symbol) {
   
