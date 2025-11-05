@@ -90,7 +90,7 @@ app.get("/api/small_cap_gainers", async (req, res) => {
   try {
    const result = await yahooFinance.screener({
   scrIds: "small_cap_gainers",
-  count: 5
+  count: 50
 });
     const quotes = result.quotes || [];
 
@@ -215,11 +215,11 @@ app.get("/api/most_actives", async (req, res) => {
         symbol: s.symbol,
         name: s.shortName || s.longName || "N/A",
         price: s.regularMarketPrice,
-        change: s.regularMarketChangePercent,
+        changePercent: s.regularMarketChangePercent,
         volume: s.regularMarketVolume,
       }));
 
-    res.json({ data: results });
+    res.json(results);
   } catch (err) {
     console.error("Error fetching most actives:", err);
     res.status(500).json({
@@ -228,6 +228,36 @@ app.get("/api/most_actives", async (req, res) => {
     });
   }
 });
+
+app.get("/api/day_losers", async (req, res) => {
+  try {
+    const movers = await yahooFinance.screener({
+      scrIds: "day_losers",
+      count: 50,
+    });
+
+    // Safely map and filter data
+    const results = (movers.quotes || [])
+      .filter((s) => s && s.symbol && s.regularMarketPrice != null)
+      .map((s) => ({
+        symbol: s.symbol,
+        name: s.shortName || s.longName || "N/A",
+        price: s.regularMarketPrice,
+        changePercent: s.regularMarketChangePercent,
+        volume: s.regularMarketVolume,
+      }));
+
+    res.json(results);
+  } catch (err) {
+    console.error("Error fetching day losers:", err);
+    res.status(500).json({
+      error: err.message,
+      details: err.errors || null, // helpful if you want to log details
+    });
+  }
+});
+
+
 //const ipv4Agent = new Agent({ connect: { family: 4 } });
 
 console.log('hhhhh');

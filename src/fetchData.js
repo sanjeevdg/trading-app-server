@@ -1,8 +1,8 @@
-const yahooFinance = require("yahoo-finance2").default;
+const YahooFinance = require("yahoo-finance2").default;
 
 
 //: string
-
+const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey','ripHistorical'] });
 
 async function fetchCandles(symbol) {
   const period1 = new Date();
