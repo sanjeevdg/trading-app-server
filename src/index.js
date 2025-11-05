@@ -257,6 +257,65 @@ app.get("/api/day_losers", async (req, res) => {
   }
 });
 
+app.get("/api/growth_technology_stocks", async (req, res) => {
+  try {
+    const movers = await yahooFinance.screener({
+      scrIds: "growth_technology_stocks",
+      count: 25,
+    });
+   //    const movers = await yahooFinance.screener("growth_technology_stocks");
+//undervalued_large_caps
+    // Safely map and filter data
+    const results = (movers.quotes || [])
+      .filter((s) => s && s.symbol && s.regularMarketPrice != null)
+      .map((s) => ({
+        symbol: s.symbol,
+        name: s.shortName || s.longName || "N/A",
+        price: s.regularMarketPrice,
+        changePercent: s.regularMarketChangePercent,
+        volume: s.regularMarketVolume,
+      }));
+
+    res.json(results);
+  } catch (err) {
+    console.error("Error fetching growth technology stocks:", err);
+    res.status(500).json({
+      error: err.message,
+      details: err.errors || null, // helpful if you want to log details
+    });
+  }
+});
+
+app.get("/api/undervalued_large_caps", async (req, res) => {
+  try {
+    const movers = await yahooFinance.screener({
+      scrIds: "undervalued_large_caps",
+      count: 50,
+    });
+   //    const movers = await yahooFinance.screener("growth_technology_stocks");
+//undervalued_large_caps
+    // Safely map and filter data
+    const results = (movers.quotes || [])
+      .filter((s) => s && s.symbol && s.regularMarketPrice != null)
+      .map((s) => ({
+        symbol: s.symbol,
+        name: s.shortName || s.longName || "N/A",
+        price: s.regularMarketPrice,
+        changePercent: s.regularMarketChangePercent,
+        volume: s.regularMarketVolume,
+      }));
+
+    res.json(results);
+  } catch (err) {
+    console.error("Error fetching growth technology stocks:", err);
+    res.status(500).json({
+      error: err.message,
+      details: err.errors || null, // helpful if you want to log details
+    });
+  }
+});
+
+
 
 //const ipv4Agent = new Agent({ connect: { family: 4 } });
 
