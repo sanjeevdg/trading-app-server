@@ -65,7 +65,8 @@ app.get("/api/trending", async (req, res) => {
     const result = await yahooFinance.screener({
   scrIds: "day_gainers",
   count: 100
-});
+},
+      { validateResult: false });
 
 
     const quotes = result?.quotes || [];
@@ -91,7 +92,8 @@ app.get("/api/small_cap_gainers", async (req, res) => {
    const result = await yahooFinance.screener({
   scrIds: "small_cap_gainers",
   count: 50
-});
+},
+      { validateResult: false });
     const quotes = result.quotes || [];
 
     const formatted = quotes
@@ -205,8 +207,9 @@ app.get("/api/most_actives", async (req, res) => {
   try {
     const movers = await yahooFinance.screener({
       scrIds: "most_actives",
-      count: 100,
-    });
+      count: 25,
+    },
+      { validateResult: false });
 
     // Safely map and filter data
     const results = (movers.quotes || [])
@@ -233,8 +236,9 @@ app.get("/api/day_losers", async (req, res) => {
   try {
     const movers = await yahooFinance.screener({
       scrIds: "day_losers",
-      count: 50,
-    });
+      count: 10,
+    },
+      { validateResult: false });
 
     // Safely map and filter data
     const results = (movers.quotes || [])
@@ -262,7 +266,8 @@ app.get("/api/growth_technology_stocks", async (req, res) => {
     const movers = await yahooFinance.screener({
       scrIds: "growth_technology_stocks",
       count: 25,
-    });
+    },
+      { validateResult: false });
    //    const movers = await yahooFinance.screener("growth_technology_stocks");
 //undervalued_large_caps
     // Safely map and filter data
@@ -286,12 +291,16 @@ app.get("/api/growth_technology_stocks", async (req, res) => {
   }
 });
 
+
+
+
 app.get("/api/undervalued_large_caps", async (req, res) => {
   try {
     const movers = await yahooFinance.screener({
       scrIds: "undervalued_large_caps",
-      count: 50,
-    });
+      count: 25,
+    },
+      { validateResult: false });
    //    const movers = await yahooFinance.screener("growth_technology_stocks");
 //undervalued_large_caps
     // Safely map and filter data
