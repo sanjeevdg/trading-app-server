@@ -205,13 +205,14 @@ app.get("/api/sma", async (req, res) => {
 
 app.get("/api/most_actives", async (req, res) => {
   try {
-    const movers = await yahooFinance.screener({
-      scrIds: "most_actives",
-      count: 25,
-    },
-      { validateResult: false });
+    const movers = await yahooFinance.screener(
+      {
+        scrIds: "most_actives",
+        count: 25,
+      },
+      { validateResult: false }
+    );
 
-    // Safely map and filter data
     const results = (movers.quotes || [])
       .filter((s) => s && s.symbol && s.regularMarketPrice != null)
       .map((s) => ({
@@ -224,10 +225,20 @@ app.get("/api/most_actives", async (req, res) => {
 
     res.json(results);
   } catch (err) {
+    const msg = err?.message?.toLowerCase() || "";
+
+    // 🚦 Detect rate-limit or 429
+    if (msg.includes("too many requests") || msg.includes("rate limit") || msg.includes("429")) {
+      console.error("❌ Screener error: Too Many Requests. Rate limited. Try after a while.");
+      return res.status(429).json({
+        error: "❌ Screener error: Too Many Requests. Rate limited. Try after a while.",
+      });
+    }
+
     console.error("Error fetching most actives:", err);
     res.status(500).json({
-      error: err.message,
-      details: err.errors || null, // helpful if you want to log details
+      error: `❌ Screener error: ${err.message || "Unknown error"}`,
+      details: err.errors || null,
     });
   }
 });
