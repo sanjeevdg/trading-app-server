@@ -64,7 +64,7 @@ app.get("/api/trending", async (req, res) => {
 
     const result = await yahooFinance.screener({
   scrIds: "day_gainers",
-  count: 100
+  count: 20
 },
       { validateResult: false });
 
@@ -91,7 +91,7 @@ app.get("/api/small_cap_gainers", async (req, res) => {
   try {
    const result = await yahooFinance.screener({
   scrIds: "small_cap_gainers",
-  count: 50
+  count: 25
 },
       { validateResult: false });
     const quotes = result.quotes || [];
