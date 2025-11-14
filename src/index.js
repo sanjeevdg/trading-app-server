@@ -70,7 +70,7 @@ app.get("/api/trending", async (req, res) => {
 
 
     const quotes = result?.quotes || [];
-
+    console.log('TOPRESULTS>>>>>>',quotes);
     const formatted = quotes.map(q => ({
       symbol: q.symbol,
       name: q.shortName || q.longName || "-",
@@ -367,24 +367,25 @@ const FINNHUB_API = "d3nr05hr01qtm4jdum8gd3nr05hr01qtm4jdum90";
 const YAHOO_FINANCE_URL = "https://query1.finance.yahoo.com/v7/finance/quote";
 const co = new CohereClient({token:"2f7GPvRUHd3oxfBByZRA0oLpoXlFU5rIYYYVA1xM"} );
 
-//const finnhubClient = new finnhub.DefaultApi();
-//finnhubClient.apiKey = finnhub.ApiClient.instance.authentications["api_key"];
-//finnhubClient.apiKey.apiKey = FINNHUB_API;
+/*
+consolenst finnhubClient = new finnhub.DefaultApi();
+finnhubClient.apiKey = finnhub.ApiClient.instance.authentications["api_key"];
+finnhubClient.apiKey.apiKey = FINNHUB_API;
 
 
-//(finnhub.ApiClient.instance?.authentications as any).api_key.apiKey = FINNHUB_API;
+(finnhub.ApiClient.instance?.authentications as any).api_key.apiKey = FINNHUB_API;
+const finnhubClient = api_key;
 
-//const finnhubClient = api_key;
 
+const finnhubAPI = new FinnhubAPI(FINNHUB_API);
 
-//const finnhubAPI = new FinnhubAPI(FINNHUB_API);
-
-//const finnhubClient = new finnhub.DefaultApi(FINNHUB_API);
-
+const finnhubClient = new finnhub.DefaultApi(FINNHUB_API);
+*/
 
 
 app.get("/api/test", async (req, res) => {
 
+/*
 https.get("https://finnhub.io/api/v1/quote?symbol=AAPL&token=d3nr05hr01qtm4jdum8gd3nr05hr01qtm4jdum90", {
   agent: new https.Agent({ family: 4 }),
 }, (res) => {
@@ -394,6 +395,19 @@ https.get("https://finnhub.io/api/v1/quote?symbol=AAPL&token=d3nr05hr01qtm4jdum8
 }).on("error", (err) => {
   console.error("❌ Error:", err);
 });
+*/
+
+
+const api_key = finnhub.ApiClient.instance.authentications['api_key'];
+api_key.apiKey = "d3nr05hr01qtm4jdum8gd3nr05hr01qtm4jdum90"
+const finnhubClient = new finnhub.DefaultApi()
+
+finnhubClient.stockSymbols("US", (error, data, response) => {
+  console.log(data)
+});
+
+
+
 
 });
 
