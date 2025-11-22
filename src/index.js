@@ -417,8 +417,16 @@ finnhubClient.stockSymbols("US", (error, data, response) => {
 app.get("/api/screener", async (req, res) => {
 
   console.log('req.query',req.query);
-  const symbols = req.query.symbols?.split(",").map(s => s.trim().toUpperCase()) || ["AAPL", "MSFT"];
-  const from = req.query.from ? new Date(req.query.from) : (() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return d; })();
+//  const symbols = req.query.symbols?.split(",").map(s => s.trim().toUpperCase()) || ["AAPL", "MSFT"];
+  
+
+let raw = req.query.symbols || "";
+let symbols = raw
+  .split(",")
+  .map(s => s.replace(/"/g, "").trim()) // remove surrounding quotes
+  .filter(Boolean);
+  
+  const from = req.query.from ? new Date(req.query.from) : (() => { const d = new Date(); d.setMonth(d.getMonth() - 6); return d; })();
   const to = req.query.to ? new Date(req.query.to) : new Date();
   const typeFilter = req.query.type?.toLowerCase() || "all";
 const selectedPatterns = req.query.patterns?.split(",").map(p => p.trim().toLowerCase()) || [];

@@ -6,7 +6,7 @@ const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey','ripHist
 
 async function fetchCandles(symbol) {
   const period1 = new Date();
-  period1.setMonth(period1.getMonth() - 3);
+  period1.setMonth(period1.getMonth() - 8);
   const period2 = new Date();
 
   const result = await yahooFinance.chart(symbol, {
