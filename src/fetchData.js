@@ -4,6 +4,16 @@ const YahooFinance = require("yahoo-finance2").default;
 //: string
 const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey','ripHistorical'] });
 
+
+function formatDate(date) {
+  if (!date) return null;
+  try {
+    return new Date(date).toISOString().split("T")[0];
+  } catch {
+    return null;
+  }
+}
+
 async function fetchCandles(symbol) {
   const period1 = new Date();
   period1.setMonth(period1.getMonth() - 8);
@@ -15,13 +25,18 @@ async function fetchCandles(symbol) {
     interval: "1d",
   });
 
+
+
+
   const quotes = result.quotes || [];
+  console.log('QUOTE[0]==',quotes[0]);
   return quotes.map((q) => ({
-    date: q.date,
+    date: formatDate(q.date),
     open: q.open,
     high: q.high,
     low: q.low,
     close: q.close,
+    volume: q.volume ?? 0,
   }));
 }
 
