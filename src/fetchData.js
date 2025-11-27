@@ -2,7 +2,13 @@ const YahooFinance = require("yahoo-finance2").default;
 
 
 //: string
-const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey','ripHistorical'] });
+const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey','ripHistorical'],
+ queue: {
+    concurrency: 1,   // only 1 outstanding request at a time
+    interval: 1100,   // milliseconds between requests (1.1s)
+  } });
+
+
 
 
 function formatDate(date) {
