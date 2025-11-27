@@ -22,6 +22,8 @@ const { screenSymbols } = require("./screener");
 
 const { detectPatterns } = require("./patternUtils2");
 const { fetchCandles } = require("./fetchData");
+const api  = require('zacks-api');
+
 
 dotenv.config();
 const app = express();
@@ -501,6 +503,52 @@ function fetchJson(url) {
     req.end();
   });
 }
+
+function safeGetData(symbol, opts) {
+  return api.getData(symbol, opts).then(data => {
+    // Fix any invalid dates
+    if (data && data.reportDate) {
+      const d = new Date(data.reportDate);
+      if (isNaN(d.getTime())) {
+        data.reportDate = null;  // or keep raw value
+      }
+    }
+    return data;
+  }).catch(err => {
+    console.error("Zacks fetch error for", symbol, err.message);
+    return { error: "Failed to fetch" };
+  });
+}
+
+app.post("/api/zacks/bulk", async (req, res) => {
+ const tickers = Array.isArray(req.body) ? req.body : req.body.tickers;
+
+  if (!tickers || !Array.isArray(tickers)) {
+    return res.status(400).json({ error: "tickers must be an array" });
+  }
+
+    const results = {};
+
+let pending = tickers.length;  // Track how many are left
+
+  tickers.forEach((symbol) => {
+    safeGetData(symbol, { usePuppeteer: true })
+      .then((data) => {
+        results[symbol] = data;
+      })
+      .catch((err) => {
+        console.error(`Zacks error for ${symbol}:`, err.message);
+        results[symbol] = { error: "Failed to fetch" };
+      })
+      .finally(() => {
+        pending--;
+        if (pending === 0) {
+          res.json(results);   // Send final response when ALL done
+        }
+      });
+  });
+
+});
 
 app.get("/api/stocks/:symbol", async (req, res) => {
   const { symbol } = req.params;

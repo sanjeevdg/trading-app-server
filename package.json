@@ -18,7 +18,8 @@
     "https": "^1.0.0",
     "openai": "^4.104.0",
     "undici": "^6.22.0",
-    "yahoo-finance2": "^3.10.1"
+    "yahoo-finance2": "^3.10.1",
+    "zacks-api": "^1.0.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
