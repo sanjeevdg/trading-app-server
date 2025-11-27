@@ -1,49 +1,81 @@
+// ------------------------------------------
+// IMPORTS
+// ------------------------------------------
 const YahooFinance = require("yahoo-finance2").default;
 
+// ------------------------------------------
+// 1️⃣ Create Single Instance with Rate Limit
+// ------------------------------------------
+const yahoo = new YahooFinance({
+  queue: {
+    concurrency: 1,   // Only 1 request at a time
+    interval: 1200,   // 1.2s delay to avoid 429
+  },
+});
 
-//: string
-const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey','ripHistorical'],
- queue: {
-    concurrency: 1,   // only 1 outstanding request at a time
-    interval: 1100,   // milliseconds between requests (1.1s)
-  } });
+// ------------------------------------------
+// 2️⃣ SIMPLE IN-MEMORY CACHE (per symbol)
+// ------------------------------------------
+const cache = {};  // { symbol: { data, expiry } }
+const CACHE_TTL_MS = 60 * 1000; // 1 minute TTL
 
-
-
-
-function formatDate(date) {
-  if (!date) return null;
-  try {
-    return new Date(date).toISOString().split("T")[0];
-  } catch {
+function getFromCache(symbol) {
+  const item = cache[symbol];
+  if (!item) return null;
+  if (Date.now() > item.expiry) {
+    delete cache[symbol]; // clean up
     return null;
   }
+  return item.data;
 }
 
+function setCache(symbol, data) {
+  cache[symbol] = {
+    data,
+    expiry: Date.now() + CACHE_TTL_MS,
+  };
+}
+
+// ------------------------------------------
+// 3️⃣ FETCH FUNCTION (SAFE)
+// ------------------------------------------
 async function fetchCandles(symbol) {
-  const period1 = new Date();
-  period1.setMonth(period1.getMonth() - 8);
-  const period2 = new Date();
+  // 1. Try cache first
+  const cached = getFromCache(symbol);
+  if (cached) {
+    console.log(`CACHE HIT for ${symbol}`);
+    return cached;
+  }
 
-  const result = await yahooFinance.chart(symbol, {
-    period1,
-    period2,
-    interval: "1d",
-  });
+  console.log(`CACHE MISS → Fetching ${symbol} from Yahoo...`);
 
+  try {
+    const period2 = new Date();
+    const period1 = new Date();
+    period1.setMonth(period2.getMonth() - 8);
 
+    const result = await yahoo.chart(symbol, {
+      interval: "1d",
+      period1,
+      period2,
+    });
 
+    const quotes = result?.quotes || [];
+    const formatted = quotes.map((q) => ({
+      date: q.date?.toISOString().split("T")[0],
+      open: q.open,
+      high: q.high,
+      low: q.low,
+      close: q.close,
+      volume: q.volume ?? 0,
+    }));
 
-  const quotes = result.quotes || [];
-  console.log('QUOTE[0]==',quotes[0]);
-  return quotes.map((q) => ({
-    date: formatDate(q.date),
-    open: q.open,
-    high: q.high,
-    low: q.low,
-    close: q.close,
-    volume: q.volume ?? 0,
-  }));
+    setCache(symbol, formatted); // ← save to cache
+    return formatted;
+  } catch (err) {
+    console.error(`ERROR fetching ${symbol}:`, err);
+    throw err;
+  }
 }
 
 module.exports = { fetchCandles };
