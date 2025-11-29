@@ -23,7 +23,7 @@ const { screenSymbols } = require("./screener");
 const { detectPatterns } = require("./patternUtils2");
 const { fetchCandles } = require("./fetchData");
 const api  = require('zacks-api');
-
+const { RSI, MACD } = require("technicalindicators");
 
 dotenv.config();
 const app = express();
@@ -337,8 +337,213 @@ app.get("/api/undervalued_large_caps", async (req, res) => {
   }
 });
 
+function getPeriod1FromRange(range) {
+  const now = new Date();
+  const date = new Date(now);
+
+  if (range === '6mo') date.setMonth(now.getMonth() - 6);
+  if (range === '1y') date.setFullYear(now.getFullYear() - 1);
+  if (range === '5y') date.setFullYear(now.getFullYear() - 5);
+  if (range === 'max') return new Date(0); // 1970
+
+  return date;
+}
+
+// ------------------ TRENDLINE DETECTION ------------------
+function detectPivots(data, lookback = 5) {
+  const pivots = { highs: [], lows: [] };
+  for (let i = lookback; i < data.length - lookback; i++) {
+    const price = data[i].close;
+    let highFlag = true;
+    let lowFlag = true;
+    
+    for (let j = i - lookback; j < i + lookback; j++) {
+      if (data[j].close > price) highFlag = false;
+      if (data[j].close < price) lowFlag = false;
+    }
+
+    if (highFlag) pivots.highs.push({ time: data[i].date, price });
+    if (lowFlag) pivots.lows.push({ time: data[i].date, price });
+  }
+  return pivots;
+}
+
+function generateTrendlines(pivots) {
+  const trendlines = [];
+
+  // Support (using pivot lows)
+  if (pivots.lows.length >= 2) {
+    const p1 = pivots.lows[0];
+    const p2 = pivots.lows[pivots.lows.length - 1];
+    trendlines.push({ type: "support", p1, p2 });
+  }
+
+  // Resistance (using pivot highs)
+  if (pivots.highs.length >= 2) {
+    const p1 = pivots.highs[0];
+    const p2 = pivots.highs[pivots.highs.length - 1];
+    trendlines.push({ type: "resistance", p1, p2 });
+  }
+
+  return trendlines;
+}
 
 
+app.get("/api/fchart2", async (req, res) => {
+  try {
+    const symbol = req.query.symbol;
+    if (!symbol) return res.status(400).json({ error: "Symbol required" });
+
+    // --- TIME RANGE (8 months) ---
+    const period2 = new Date();
+    const period1 = new Date();
+    period1.setMonth(period2.getMonth() - 8);
+
+    const chartData = await yahooFinance.chart(symbol, {
+      period1,
+      period2,
+      interval: "1d",
+    });
+
+    const quotes = chartData?.quotes || [];
+    if (!quotes.length) return res.status(404).json({ error: "No data" });
+
+console.log(quotes[0].date, typeof quotes[0].date);
+
+    // --- EXTRACT ARRAYS ---
+    const close = quotes.map(q => q.close);
+    const volume = quotes.map(q => q.volume);
+
+    // --- CALCULATE RSI ---
+   const rsiRaw = RSI.calculate({ values: close, period: 14 });
+
+// CLEAN RSI
+const rsi = rsiRaw.map((val, i) => {
+  if (!isFinite(val)) return null;  // Skip invalid
+  const idx = i + (quotes.length - rsiRaw.length);
+  const dateString = new Date(quotes[idx].date).toISOString().split("T")[0];
+  return { time: dateString, value: Number(val) };
+}).filter(Boolean); // remove null values
+
+  // --- CALCULATE MACD ---
+const macdRaw = MACD.calculate({
+  values: close,
+  fastPeriod: 12,
+  slowPeriod: 26,
+  signalPeriod: 9,
+  SimpleMAOscillator: false,
+  SimpleMASignal: false,
+});
+
+const macd = macdRaw.map((entry, i) => {
+  const idx = i + (quotes.length - macdRaw.length);
+  const dateString = new Date(quotes[idx].date).toISOString().split("T")[0];
+
+  if (!isFinite(entry.histogram) || !isFinite(entry.signal) || !isFinite(entry.MACD)) {
+    return null;  // skip invalid rows
+  }
+
+
+
+
+  return {
+    time: dateString,
+    hist: Number(entry.histogram),
+    signal: Number(entry.signal),
+    macd: Number(entry.MACD),
+  };
+}).filter(Boolean);
+
+
+const pivots = detectPivots(quotes);
+const trendlines = generateTrendlines(pivots).map(t => ({
+  ...t,
+  p1: { time: new Date(t.p1.time).toISOString().split("T")[0], price: t.p1.price },
+  p2: { time: new Date(t.p2.time).toISOString().split("T")[0], price: t.p2.price },
+}));
+
+    // --- FINAL RESPONSE ---
+    res.json({
+      meta: chartData.meta,
+      quotes,
+      indicators: { rsi, macd },
+      trendlines,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+app.get("/api/fchart", async (req, res) => {
+try {
+    const symbol = req.query.symbol;
+    if (!symbol) return res.status(400).json({ error: "Symbol is required" });
+
+    // Yahoo Finance expects UNIX timestamps (or range) – NOT Date objects
+     const period2 = new Date();
+    const period1 = new Date();
+    period1.setMonth(period2.getMonth() - 8);
+
+    const chartData = await yahooFinance.chart(symbol, {
+      period1,
+      period2,       // MUCH safer
+      interval: "1d",
+    });
+const quotes = chartData.quotes;
+const formattedQuotes = quotes.map(q => ({
+   date: new Date(q.date).toISOString().split("T")[0],
+  open: q.open,
+  high: q.high,
+  low: q.low,
+  close: q.close,
+  volume: q.volume,
+}));
+    
+    if (!quotes.length) return res.status(404).json({ error: "No data available" });
+
+    // Extract closing prices and volume
+    const close = quotes.map(q => q.close);
+
+    // -------- RSI --------
+    const rsiRaw = RSI.calculate({ values: close, period: 14 });
+    const rsi = rsiRaw.map((v, i) => ({
+      time: quotes[i + (quotes.length - rsiRaw.length)]?.date,
+      value: v,
+    }));
+
+    // -------- MACD --------
+    const macdRaw = MACD.calculate({
+      values: close,
+      fastPeriod: 12,
+      slowPeriod: 26,
+      signalPeriod: 9,
+      SimpleMAOscillator: false,
+      SimpleMASignal: false,
+    });
+
+    const macd = macdRaw.map((entry, i) => ({
+      time: quotes[i + (quotes.length - macdRaw.length)]?.date,
+      hist: entry.histogram,
+      signal: entry.signal,
+      macd: entry.MACD,
+    }));
+
+    return res.json({
+      meta: chartData.meta,
+      formattedQuotes,
+      indicators: { rsi, macd },
+    });
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      error: "Server Error",
+      message: error.message,
+    });
+  }
+});
 //const ipv4Agent = new Agent({ connect: { family: 4 } });
 
 console.log('hhhhh');
