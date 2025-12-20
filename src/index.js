@@ -1,13 +1,19 @@
 //import express, { Request, Response } from "express";
 //import cors from "cors";
 //import dotenv from 'dotenv';
+const dotenv = require("dotenv").config();
+
 const express = require("express");
 const { CohereClient } = require("cohere-ai");
 const dns = require("dns");
 //const { Request, Response } = require("express");
 const axios  = require("axios");
 const cors = require("cors");
-const dotenv = require("dotenv");
+const http = require("http");
+const { WebSocket } = require("ws");
+const { Server } = require("socket.io");
+
+
 const finnhub = require("finnhub");
 //import FinnhubAPI, { FinnhubWS } from '@stoqey/finnhub';
 const YahooFinance = require("yahoo-finance2").default;
@@ -24,12 +30,21 @@ const { detectPatterns } = require("./patternUtils2");
 const { fetchCandles } = require("./fetchData");
 const api  = require('zacks-api');
 const { RSI, MACD } = require("technicalindicators");
+const { alpacaTrading, alpacaData}  = require("./utils/alpacaClient");
 
-dotenv.config();
+const { connectMarketDataWS } = require("./marketDataWS.js");
+//dotenv.config();
 const app = express();
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*" }
+});
+
+
 app.use(cors());
 app.use(express.json());
-
+app.use(express.urlencoded({ extended: true }));
 
 dns.setDefaultResultOrder("ipv4first");
 
@@ -388,7 +403,189 @@ function generateTrendlines(pivots) {
   return trendlines;
 }
 
+// ---- BREAKOUT DETECTION ----
+function detectBreakouts(quotes, trendlines) {
+  const last = quotes[quotes.length - 1];
+  const lastClose = last.close;
 
+  return trendlines.map((t) => {
+    // Calculate slope (simple line equation)
+    const x1 = new Date(t.p1.time).getTime();
+    const x2 = new Date(t.p2.time).getTime();
+    const y1 = t.p1.price;
+    const y2 = t.p2.price;
+
+    const m = (y2 - y1) / (x2 - x1); // slope
+    const b = y1 - m * x1; // intercept
+
+    // Calculate trendline price at last date:
+    const trendPrice = m * new Date(last.date).getTime() + b;
+
+    let breakout = null;
+    if (t.type === "support" && lastClose < trendPrice) {
+      breakout = "bearish";
+    }
+    if (t.type === "resistance" && lastClose > trendPrice) {
+      breakout = "bullish";
+    }
+
+    return { ...t, trendPrice, breakout };
+  });
+}
+
+function computeATSF(quotes) {
+  const period = 20; // sliding window
+  const out = [];
+
+  for (let i = period; i < quotes.length; i++) {
+    const slice = quotes.slice(i - period, i);
+    const closes = slice.map(p => p.close);
+
+    // Linear regression slope
+    const n = closes.length;
+    const x = [...Array(n).keys()];
+    const meanX = x.reduce((a, b) => a + b) / n;
+    const meanY = closes.reduce((a, b) => a + b) / n;
+
+    const slope =
+      x.reduce((acc, xi, j) => acc + (xi - meanX) * (closes[j] - meanY), 0) /
+      x.reduce((acc, xi) => acc + (xi - meanX) ** 2, 0);
+
+    // Momentum score
+    const momentum = (closes[n - 1] - closes[0]) / closes[0];
+
+    // Volatility penalty
+    const variance =
+      closes.reduce((acc, c) => acc + (c - meanY) ** 2, 0) / n;
+    const volPenalty = Math.sqrt(variance);
+
+    // Normalize AI score from 0-100
+    let score = slope * 1200 + momentum * 100 - volPenalty * 5;
+    score = Math.max(0, Math.min(100, score));
+
+    console.log('slice[slice.length - 1]==',typeof slice[slice.length - 1].date);
+
+    out.push({
+      time: new Date(slice[slice.length - 1].date).toISOString().split("T")[0],
+      value: parseFloat(score.toFixed(2)),
+    });
+  }
+
+  return out;
+}
+
+
+app.get("/api/fchart2", async (req, res) => {
+  try {
+    const symbol = req.query.symbol;
+    if (!symbol) return res.status(400).json({ error: "Symbol required" });
+
+    // --- TIME RANGE (8 months) ---
+    const period2 = new Date();
+    const period1 = new Date();
+    period1.setMonth(period2.getMonth() - 8);
+
+    // ============ SAFE WRAPPER WITH RETRIES ============
+    async function safeYahooChart(symbol, options, retries = 5, delay = 500) {
+      try {
+        return await yahooFinance.chart(symbol, options);
+      } catch (err) {
+        const status = err?.status || err?.statusCode;
+
+        // Handle Too Many Requests
+        if (status === 429 && retries > 0) {
+          console.warn(`⚠️ 429 Too Many Requests — retrying in ${delay} ms (${retries} retries left)`);
+
+          await new Promise(r => setTimeout(r, delay));
+          return safeYahooChart(symbol, options, retries - 1, delay * 2); // exponential backoff
+        }
+
+        // Some other error → just rethrow after retries
+        throw err;
+      }
+    }
+
+    // ========== CALL USING SAFE WRAPPER ==========
+    const chartData = await safeYahooChart(symbol, {
+      period1,
+      period2,
+      interval: "1d",
+    });
+
+    const quotes = chartData?.quotes || [];
+    if (!quotes.length) return res.status(404).json({ error: "No data" });
+
+    console.log(quotes[0].date, typeof quotes[0].date);
+
+    // --- ARRAYS ---
+    const close = quotes.map(q => q.close);
+    const volume = quotes.map(q => q.volume);
+
+    const atsf = computeATSF(quotes);
+
+    // --- RSI ---
+    const rsiRaw = RSI.calculate({ values: close, period: 14 });
+    const rsi = rsiRaw.map((val, i) => {
+      if (!isFinite(val)) return null;
+      const idx = i + (quotes.length - rsiRaw.length);
+      const dateString = new Date(quotes[idx].date).toISOString().split("T")[0];
+      return { time: dateString, value: Number(val) };
+    }).filter(Boolean);
+
+    // --- MACD ---
+    const macdRaw = MACD.calculate({
+      values: close,
+      fastPeriod: 12,
+      slowPeriod: 26,
+      signalPeriod: 9,
+      SimpleMAOscillator: false,
+      SimpleMASignal: false,
+    });
+
+    const macd = macdRaw.map((entry, i) => {
+      const idx = i + (quotes.length - macdRaw.length);
+      const dateString = new Date(quotes[idx].date).toISOString().split("T")[0];
+
+      if (!isFinite(entry.histogram) || !isFinite(entry.signal) || !isFinite(entry.MACD)) return null;
+
+      return {
+        time: dateString,
+        hist: Number(entry.histogram),
+        signal: Number(entry.signal),
+        macd: Number(entry.MACD),
+      };
+    }).filter(Boolean);
+
+    // --- TRENDLINES ---
+    const pivots = detectPivots(quotes);
+    const trendlines = generateTrendlines(pivots).map(t => ({
+      ...t,
+      p1: { time: new Date(t.p1.time).toISOString().split("T")[0], price: t.p1.price },
+      p2: { time: new Date(t.p2.time).toISOString().split("T")[0], price: t.p2.price },
+    }));
+
+    const enrichedTrendlines = detectBreakouts(quotes, trendlines);
+
+    // --- RESPONSE ---
+    res.json({
+      meta: chartData.meta,
+      quotes,
+      indicators: { rsi, macd },
+      ai: { atsf },
+      enrichedTrendlines,
+    });
+
+  } catch (e) {
+    console.error("⛔ API ERROR:", e);
+    res.status(500).json({ error: e.message || "Internal server error" });
+  }
+});
+
+
+
+
+
+/**
 app.get("/api/fchart2", async (req, res) => {
   try {
     const symbol = req.query.symbol;
@@ -414,6 +611,9 @@ console.log(quotes[0].date, typeof quotes[0].date);
     const close = quotes.map(q => q.close);
     const volume = quotes.map(q => q.volume);
 
+
+const atsf = computeATSF(quotes);
+console.log('computed-atsf===',atsf);
     // --- CALCULATE RSI ---
    const rsiRaw = RSI.calculate({ values: close, period: 14 });
 
@@ -450,7 +650,7 @@ const macd = macdRaw.map((entry, i) => {
     time: dateString,
     hist: Number(entry.histogram),
     signal: Number(entry.signal),
-    macd: Number(entry.MACD),
+    macd: Number(entry.MACD),   
   };
 }).filter(Boolean);
 
@@ -462,19 +662,23 @@ const trendlines = generateTrendlines(pivots).map(t => ({
   p2: { time: new Date(t.p2.time).toISOString().split("T")[0], price: t.p2.price },
 }));
 
+const enrichedTrendlines = detectBreakouts(quotes, trendlines);
     // --- FINAL RESPONSE ---
     res.json({
       meta: chartData.meta,
       quotes,
       indicators: { rsi, macd },
-      trendlines,
+       ai: {
+          atsf
+      },
+      enrichedTrendlines,
     });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
-
+**/
 
 app.get("/api/fchart", async (req, res) => {
 try {
@@ -726,15 +930,16 @@ function safeGetData(symbol, opts) {
 }
 
 app.post("/api/zacks/bulk", async (req, res) => {
- const tickers = Array.isArray(req.body) ? req.body : req.body.tickers;
+  const tickers = Array.isArray(req.body) ? req.body : req.body.tickers;
 
-  if (!tickers || !Array.isArray(tickers)) {
-    return res.status(400).json({ error: "tickers must be an array" });
+  console.log("Received tickers:", tickers);
+
+  if (!Array.isArray(tickers) || tickers.length === 0) {
+    return res.status(400).json({ error: "tickers must be a non-empty array" });
   }
 
-    const results = {};
-
-let pending = tickers.length;  // Track how many are left
+  const results = {};
+  let pending = tickers.length;
 
   tickers.forEach((symbol) => {
     safeGetData(symbol, { usePuppeteer: true })
@@ -748,12 +953,12 @@ let pending = tickers.length;  // Track how many are left
       .finally(() => {
         pending--;
         if (pending === 0) {
-          res.json(results);   // Send final response when ALL done
+          res.json(results);
         }
       });
   });
-
 });
+
 
 app.get("/api/stocks/:symbol", async (req, res) => {
   const { symbol } = req.params;
@@ -1081,13 +1286,311 @@ app.post("/api/analyze", async (req, res) => {
 });
 
 
+/* ===============================
+   ACCOUNT INFO
+================================ */
+app.get("/api/account", async (req, res) => {
+  try {
+    const response = await alpacaTrading.get("/v2/account");
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json(err.response?.data || err.message);
+  }
+});
+
+/* ===============================
+   ASSETS (tradable stocks)
+================================ */
+app.get("/api/assets", async (req, res) => {
+  try {
+    const response = await alpacaTrading.get("/v2/assets", {
+      params: {
+        status: "active",
+        asset_class: "us_equity",
+        tradable: true,
+        exchange: "NASDAQ", // or NYSE NASDAQ
+      },
+    });
+console.log('inassets>>',response.data.length);
+    const slim = response.data
+      .filter(a => a.fractionable) // optional
+      .slice(0, 100)
+      .map(a => ({
+        symbol: a.symbol,
+        name: a.name,
+        exchange: a.exchange,
+      }));
+
+    res.json(slim);
+  } catch (err) {
+    res.status(500).json(err.response?.data || err.message);
+  }
+});
+/* ===============================
+   OPEN POSITIONS
+================================ */
+app.get("/api/positions", async (req, res) => {
+  try {
+    const response = await alpacaTrading.get("/v2/positions");
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json(err.response?.data || err.message);
+  }
+});
 
 
+app.get("/api/orders", async (req, res) => {
+
+  console.log('ht endpoint api/orders');
+  try {
+    const response = await alpacaTrading.get("/v2/orders");
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json(err.response?.data || err.message);
+  }
+});
+
+async function getBasePrice(symbol) {
+  try {
+    const res = await alpacaData.get(
+      `/v2/stocks/${symbol}/quotes/latest`
+    );
+
+    const quote = res.data?.quote;
+
+    if (!quote) {
+      throw new Error("No quote returned");
+    }
+
+    // BUY → use ask price
+    if (quote.ap && quote.ap > 0) {
+      return Number(quote.ap);
+    }
+
+    // fallback
+    if (quote.bp && quote.bp > 0) {
+      return Number(quote.bp);
+    }
+
+    throw new Error("Invalid quote prices");
+  } catch (err) {
+    console.error("getBasePrice error:", err.response?.data || err.message);
+    throw err;
+  }
+}
 
 
+/* ===============================
+   PLACE ORDER (NORMAL / BRACKET)
+================================ */
+app.post("/api/order", async (req, res) => {
+
+console.log('ht endpoint api/orders222222');
+
+  try {
+    const {
+      symbol,
+      qty,
+      side,
+      type = "market",
+      order_class,
+      stop_loss,
+      take_profit,
+    } = req.body;
+
+    console.log('order_class===',order_class );
+    let basePrice = null;
+
+    if (order_class === "bracket") {
+      basePrice = await getBasePrice(symbol);
+    }
 
 
-app.listen(process.env.PORT || 4000, () =>
+console.log('order_class===',order_class );
+
+    const orderPayload = {
+      symbol,
+      qty,
+      side,
+      type,
+      time_in_force: "day",
+    };
+
+    if (order_class === "bracket") {
+      orderPayload.order_class = "bracket";
+
+      if (stop_loss?.stop_price) {
+        if (stop_loss.stop_price >= basePrice) {
+          return res.status(400).json({
+            error: `Stop loss must be below ${basePrice}`,
+          });
+        }
+
+        orderPayload.stop_loss = {
+          stop_price: Number(stop_loss.stop_price.toFixed(2)),
+        };
+      }
+
+      if (take_profit?.limit_price) {
+        if (take_profit.limit_price <= basePrice) {
+          return res.status(400).json({
+            error: `Take profit must be above ${basePrice}`,
+          });
+        }
+
+        orderPayload.take_profit = {
+          limit_price: Number(take_profit.limit_price.toFixed(2)),
+        };
+      }
+    }
+
+    console.log('my orderPayload===',orderPayload);
+
+    const response = await alpacaTrading.post("/v2/orders", orderPayload);
+
+    console.log('my reposnse from alpaca==',response);
+
+    res.json(response.data);
+
+  } catch (err) {
+    res.status(500).json(err.response?.data || err.message);
+  }
+});
+
+/* ===============================
+   CLOSE POSITION
+================================ */
+app.delete("/api/positions/:symbol", async (req, res) => {
+  try {
+    const response = await alpacaTrading.delete(
+      `/v2/positions/${req.params.symbol}`
+    );
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json(err.response?.data || err.message);
+  }
+});
+
+console.log("Alpaca baseURL:", alpacaTrading);
+
+app.get("/api/search", async (req, res) => {
+
+
+  const { q } = req.query;
+
+console.log('search hit -q==',q);
+
+  if (!q || q.length < 2) return res.json([]);
+
+  const response = await alpaca.get("/v2/assets");
+
+  const matches = response.data
+    .filter(a =>
+      a.symbol.startsWith(q.toUpperCase()) &&
+      a.tradable
+    )
+    .slice(0, 20)
+    .map(a => ({
+      symbol: a.symbol,
+      name: a.name,
+    }));
+
+  res.json(matches);
+});
+
+/* ================= CONFIG ================= */
+const ALPACA_KEY = process.env.ALPACA_KEY;
+const ALPACA_SECRET = process.env.ALPACA_SECRET;
+const ALPACA_WS_URL = "wss://stream.data.alpaca.markets/v2/iex"; // or sip
+const SYMBOL_API = "http://192.168.150.105:5000/api/symbol_list_sp500";
+/* ========================================== */
+
+let alpacaWS = null;
+
+/* ---------- Fetch & parse symbols ---------- */
+async function fetchSymbols() {
+  const res = await axios.get(SYMBOL_API);
+
+console.log('myres.data==',res.data);
+
+  return res.data.symbols;
+ //   .replace(/"/g, "")
+//    .split(",")
+ //   .map(s => s.trim());
+}
+
+/* ---------- Alpaca WebSocket ---------- */
+async function startAlpacaWS() {
+  const symbols = await fetchSymbols();
+
+  alpacaWS = new WebSocket(ALPACA_WS_URL);
+
+  alpacaWS.on("open", () => {
+    console.log("✅ Connected to Alpaca WS");
+
+    alpacaWS.send(JSON.stringify({
+      action: "auth",
+      key: ALPACA_KEY,
+      secret: ALPACA_SECRET
+    }));
+
+    alpacaWS.send(JSON.stringify({
+      action: "subscribe",
+      trades: symbols
+    }));
+  });
+
+  alpacaWS.on("message", (msg) => {
+    const data = JSON.parse(msg);
+
+    data.forEach(event => {
+      if (event.T === "t") {
+        io.emit("price", {
+          symbol: event.S,
+          price: event.p,
+          size: event.s,
+          time: event.t
+        });
+      }
+    });
+  });
+
+  alpacaWS.on("close", () => {
+    console.log("❌ Alpaca WS closed — reconnecting...");
+    setTimeout(startAlpacaWS, 3000);
+  });
+}
+
+startAlpacaWS();
+
+/* ---------- Socket.IO ---------- */
+io.on("connection", (socket) => {
+  console.log("🟢 Client connected a");
+  socket.on("disconnect", () => console.log("🔴 Client disconnected"));
+});
+
+
+const trackedSymbols = new Set();
+
+io.on("connection", async (socket) => {
+  console.log("🟢 Client connected b");
+
+  const positions = await alpacaTrading.get("/v2/positions");
+  socket.emit("positions:update", positions.data);
+
+  // Track symbols
+  positions.data.forEach(p => trackedSymbols.add(p.symbol));
+
+  socket.emit("symbols:list", [...trackedSymbols]);
+
+  socket.on("disconnect", () => {
+    console.log("🔴 Client disconnected");
+  });
+});
+
+connectMarketDataWS(io, () => [...trackedSymbols]);
+
+server.listen(process.env.PORT || 4000, () =>
   console.log(`✅ Server running on port ${process.env.PORT || 4000}`)
 );
 
