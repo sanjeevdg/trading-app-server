@@ -1502,7 +1502,7 @@ console.log('search hit -q==',q);
 const ALPACA_KEY = process.env.ALPACA_KEY;
 const ALPACA_SECRET = process.env.ALPACA_SECRET;
 const ALPACA_WS_URL = "wss://stream.data.alpaca.markets/v2/iex"; // or sip
-const SYMBOL_API = "http://192.168.150.105:5000/api/symbol_list_sp500";
+const SYMBOL_API = "https://candlestick-screener.onrender.com/api/symbol_list_sp500";
 /* ========================================== */
 
 let alpacaWS = null;
