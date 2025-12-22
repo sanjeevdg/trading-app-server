@@ -1521,7 +1521,7 @@ console.log('myres.data==',res.data);
 
 /* ---------- Alpaca WebSocket ---------- */
 async function startAlpacaWS() {
-  const symbols = await fetchSymbols();
+ // const symbols = await fetchSymbols();
 
   alpacaWS = new WebSocket(ALPACA_WS_URL);
 
@@ -1533,13 +1533,13 @@ async function startAlpacaWS() {
       key: ALPACA_KEY,
       secret: ALPACA_SECRET
     }));
-
+/*
     alpacaWS.send(JSON.stringify({
       action: "subscribe",
       trades: symbols
     }));
   });
-
+*/
   alpacaWS.on("message", (msg) => {
     const data = JSON.parse(msg);
 
