@@ -1538,8 +1538,10 @@ async function startAlpacaWS() {
       action: "subscribe",
       trades: symbols
     }));
-  });
 */
+
+  });
+
   alpacaWS.on("message", (msg) => {
     const data = JSON.parse(msg);
 
