@@ -33,7 +33,7 @@ const { RSI, MACD } = require("technicalindicators");
 const { alpacaTrading, alpacaData}  = require("./utils/alpacaClient");
 
 const { connectMarketDataWS } = require("./marketDataWS.js");
-//dotenv.config();
+
 const app = express();
 
 const server = http.createServer(app);
@@ -41,6 +41,7 @@ const io = new Server(server, {
   cors: { origin: "*" }
 });
 
+//console.log("Market:", Market);
 
 app.use(cors());
 app.use(express.json());
@@ -71,6 +72,18 @@ yahooFinance._opts.validation = {
 
 
 
+app.get("/api/topgainers", async (req, res) => {
+
+console.log('endpoint hit2222');
+
+  try {
+    const response = await alpacaData.get(`/v1beta1/screener/stocks/top-gainers`);
+    res.json(response.data);
+  } catch (err) {
+    console.log('caughterr>>>',err);
+    res.status(500).json(err.response?.data || err.message);
+  } 
+});
 
 
 app.get("/api/trending", async (req, res) => {
@@ -1338,6 +1351,21 @@ app.get("/api/positions", async (req, res) => {
   }
 });
 
+
+/* ===============================
+   ACCOUNT
+================================ */
+
+
+
+app.get("/api/account", async (req, res) => {
+  try {
+    const response = await alpacaTrading.get("/v2/account");
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json(err.response?.data || err.message);
+  }
+});
 
 app.get("/api/orders", async (req, res) => {
 
